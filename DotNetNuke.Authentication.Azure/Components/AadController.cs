@@ -108,7 +108,7 @@ namespace DotNetNuke.Authentication.Azure.Components
             }
 
             var authorization = ValidateAuthHeader(request?.Headers.Authorization);
-            return string.IsNullOrEmpty(authorization) ? null : ValidateAuthorizationValue(authorization);
+            return string.IsNullOrEmpty(authorization) ? null : ValidateAuthorizationValue(authorization, null);
         }
 
         /// <summary>
@@ -172,7 +172,7 @@ namespace DotNetNuke.Authentication.Azure.Components
             return token;
         }
 
-        internal string ValidateAuthorizationValue(string authorization)
+        internal string ValidateAuthorizationValue(string authorization, JwtSecurityToken idToken)
         {
             var cache = DotNetNuke.Services.Cache.CachingProvider.Instance();
             // Calculate a hash of a string
@@ -209,9 +209,9 @@ namespace DotNetNuke.Authentication.Azure.Components
 
             var jwt = GetAndValidateJwt(authorization, true);
             if (jwt == null) 
-                return null; 
+                return null;
 
-            var userInfo = TryGetUser(jwt);  
+            var userInfo = TryGetUser(jwt, idToken);  
             var userName = userInfo?.Username;
 
             cache.Insert(cacheKey, userName, null, jwt.ValidTo, TimeSpan.Zero);
@@ -219,7 +219,7 @@ namespace DotNetNuke.Authentication.Azure.Components
             return userName;
         }
 
-        private UserInfo TryGetUser(JwtSecurityToken jwt)
+        private UserInfo TryGetUser(JwtSecurityToken jwt, JwtSecurityToken jwtId)
         {
             try
             {
@@ -235,15 +235,15 @@ namespace DotNetNuke.Authentication.Azure.Components
                     if (Logger.IsDebugEnabled) Logger.Debug($"Azure AD auth is not enabled for portal {portalSettings.PortalId}");
                     return null;
                 }
-
+                
                 var userIdClaim = Utils.GetUserIdClaim(azureConfig.UseGlobalSettings ? -1 : portalSettings.PortalId);
-                var userClaim = jwt.Claims.FirstOrDefault(x => x.Type == userIdClaim);
+                var userClaim = jwtId.Claims.FirstOrDefault(x => x.Type == userIdClaim);
                 if (userClaim == null)
                 {
                     if (Logger.IsDebugEnabled) Logger.Debug($"Can't find '{userIdClaim}' claim on token");
                 }
 
-                var userInfo = GetOrCreateCachedUserInfo(jwt, portalSettings, userClaim);
+                var userInfo = GetOrCreateCachedUserInfo(jwt, portalSettings, userClaim, jwtId);
                 if (userInfo == null)
                 {
                     if (Logger.IsDebugEnabled) Logger.Debug("Invalid user");
@@ -272,7 +272,7 @@ namespace DotNetNuke.Authentication.Azure.Components
 
         }
 
-        private static UserInfo GetOrCreateCachedUserInfo(JwtSecurityToken jwt, PortalSettings portalSettings, System.Security.Claims.Claim userClaim)
+        private static UserInfo GetOrCreateCachedUserInfo(JwtSecurityToken jwt, PortalSettings portalSettings, System.Security.Claims.Claim userClaim, JwtSecurityToken jwtId)
         {
             var usernamePrefixEnabled = bool.Parse(AzureConfig.GetSetting(AzureConfig.ServiceName, "UsernamePrefixEnabled", portalSettings.PortalId, "true"));
             var usernameToFind = usernamePrefixEnabled ? $"{AzureConfig.ServiceName}-{userClaim.Value}" : userClaim.Value;
@@ -281,7 +281,7 @@ namespace DotNetNuke.Authentication.Azure.Components
             var cache = DotNetNuke.Services.Cache.CachingProvider.Instance();
             if (string.IsNullOrEmpty((string)cache.GetItem($"SyncAADToken|{tokenKey}")))
             {
-                var azureClient = new AzureClient(portalSettings.PortalId, AuthMode.Login, jwt);
+                var azureClient = new AzureClient(portalSettings.PortalId, AuthMode.Login, jwt, jwtId);
                 azureClient.SetAuthTokenInternal(jwt.RawData);
                 azureClient.SetAutoMatchExistingUsers(true);
                 var userData = azureClient.GetCurrentUserInternal(jwt);
