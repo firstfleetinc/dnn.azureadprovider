@@ -328,7 +328,7 @@ namespace DotNetNuke.Authentication.Azure.Components
             AuthTokenName = "AzureUserToken";
             OAuthVersion = "2.0";
             OAuthHeaderCode = "Basic";
-            LoadTokenCookieInternal(string.Empty, jwt == null);
+            //LoadTokenCookieInternal(string.Empty, jwt == null);
             JwtIdToken = jwt;
             JwtIdToken2 = jwtId;
 
@@ -812,7 +812,7 @@ namespace DotNetNuke.Authentication.Azure.Components
                 }
             }
 
-            SaveTokenCookie(authResult != AuthorisationResult.Authorized);
+            //SaveTokenCookie(authResult != AuthorisationResult.Authorized);
             return authResult;
         }
 
