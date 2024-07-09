@@ -300,7 +300,7 @@ namespace DotNetNuke.Authentication.Azure.Components
             if (!string.IsNullOrEmpty(Settings.TenantId))
             {
                 TokenEndpoint = new Uri(string.Format(Utils.GetAppSetting("AzureAD.TokenEndpointPattern", TokenEndpointPattern), Settings.TenantId));
-                LogoutEndpoint = new Uri(string.Format(Utils.GetAppSetting("AzureAD.LogoutEndpointPattern", LogoutEndpointPattern), Settings.TenantId, UrlEncode(HttpContext.Current.Request.Url.ToString())));
+                LogoutEndpoint = HttpContext.Current.Request.Url;
                 AuthorizationEndpoint = new Uri(string.Format(Utils.GetAppSetting("AzureAD.AuthorizationEndpointPattern", AuthorizationEndpointPattern), Settings.TenantId));
                 MeGraphEndpoint = new Uri(string.Format(Utils.GetAppSetting("AzureAD.GraphEndpointPattern", GraphEndpointPattern), Settings.TenantId));
             }
