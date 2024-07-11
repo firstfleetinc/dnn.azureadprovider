@@ -250,6 +250,7 @@ namespace DotNetNuke.Authentication.Azure.Components
         #region Constructors
 
         internal JwtSecurityToken JwtIdToken { get; set; }
+        public JwtSecurityToken JwtIdToken2 { get; set; }
         public Uri LogoutEndpoint { get; set; }
 
         private bool _autoMatchExistingUsers = false;
@@ -283,13 +284,13 @@ namespace DotNetNuke.Authentication.Azure.Components
             Initialize(portalId, mode, null);
         }
 
-        public AzureClient(int portalId, AuthMode mode, JwtSecurityToken jwt)
+        public AzureClient(int portalId, AuthMode mode, JwtSecurityToken jwt, JwtSecurityToken jwtId)
             : base(portalId, mode, AzureConfig.ServiceName)
         {
-            Initialize(portalId, mode, jwt);
+            Initialize(portalId, mode, jwt, jwtId);
         }
 
-        private void Initialize(int portalId, AuthMode mode, JwtSecurityToken jwt)
+        private void Initialize(int portalId, AuthMode mode, JwtSecurityToken jwt, JwtSecurityToken jwtId = null)
         {
             Settings = new AzureConfig(AzureConfig.ServiceName, portalId);
 
@@ -299,7 +300,7 @@ namespace DotNetNuke.Authentication.Azure.Components
             if (!string.IsNullOrEmpty(Settings.TenantId))
             {
                 TokenEndpoint = new Uri(string.Format(Utils.GetAppSetting("AzureAD.TokenEndpointPattern", TokenEndpointPattern), Settings.TenantId));
-                LogoutEndpoint = new Uri(string.Format(Utils.GetAppSetting("AzureAD.LogoutEndpointPattern", LogoutEndpointPattern), Settings.TenantId, UrlEncode(HttpContext.Current.Request.Url.ToString())));
+                LogoutEndpoint = HttpContext.Current.Request.Url;
                 AuthorizationEndpoint = new Uri(string.Format(Utils.GetAppSetting("AzureAD.AuthorizationEndpointPattern", AuthorizationEndpointPattern), Settings.TenantId));
                 MeGraphEndpoint = new Uri(string.Format(Utils.GetAppSetting("AzureAD.GraphEndpointPattern", GraphEndpointPattern), Settings.TenantId));
             }
@@ -327,8 +328,9 @@ namespace DotNetNuke.Authentication.Azure.Components
             AuthTokenName = "AzureUserToken";
             OAuthVersion = "2.0";
             OAuthHeaderCode = "Basic";
-            LoadTokenCookieInternal(string.Empty, jwt == null);
+            //LoadTokenCookieInternal(string.Empty, jwt == null);
             JwtIdToken = jwt;
+            JwtIdToken2 = jwtId;
 
             _prefixServiceToUserName = Settings.UsernamePrefixEnabled;
             _prefixServiceToGroupName = Settings.GroupNamePrefixEnabled;
@@ -372,7 +374,7 @@ namespace DotNetNuke.Authentication.Azure.Components
                     authorization = aadController.ValidateAuthHeader(token);
                     username = string.IsNullOrEmpty(authorization) 
                         ? string.Empty 
-                        : aadController.ValidateAuthorizationValue(authorization);
+                        : aadController.ValidateAuthorizationValue(authorization, JwtIdToken2);
                 }
                 catch (Exception ex)
                 {
@@ -443,8 +445,10 @@ namespace DotNetNuke.Authentication.Azure.Components
             var jsonSerializer = new JavaScriptSerializer();
             var tokenDictionary = jsonSerializer.DeserializeObject(responseText) as Dictionary<string, object>;
             var token = Convert.ToString(tokenDictionary["access_token"]);
-            
+            var idToken = Convert.ToString(tokenDictionary["id_token"]);            
+
             JwtIdToken = new JwtSecurityToken(token);
+            JwtIdToken2 = new JwtSecurityToken(idToken);
             LoadToken(token);
             return AuthToken;
         }
@@ -467,8 +471,9 @@ namespace DotNetNuke.Authentication.Azure.Components
                 return null;
             }
             var claims = JwtIdToken.Claims.ToArray();
+            var idClaims = JwtIdToken2.Claims.ToArray();
             EnsureClaimExists(claims, EmailClaimName);
-            EnsureClaimExists(claims, UserIdClaim);
+            EnsureClaimExists(idClaims, UserIdClaim);
             EnsureClaimExists(claims, "oid");       // we need this claim to make calls to AAD Graph
 
             var user = new AzureUserData()
@@ -477,7 +482,7 @@ namespace DotNetNuke.Authentication.Azure.Components
                 AzureLastName = claims.FirstOrDefault(x => x.Type == LastNameClaimName)?.Value,
                 AzureDisplayName = claims.FirstOrDefault(x => x.Type == DisplayNameClaimName)?.Value,
                 Email = claims.FirstOrDefault(x => x.Type == EmailClaimName)?.Value,
-                Id = claims.FirstOrDefault(x => x.Type == UserIdClaim).Value
+                Id = idClaims.FirstOrDefault(x => x.Type == UserIdClaim).Value
             };
 
             // Store checks in variables to increase readability and avoid executing the same logic more than once.
@@ -650,7 +655,7 @@ namespace DotNetNuke.Authentication.Azure.Components
                 {
                     var claimName = portalUserMapping?.AadClaimName;
                     // Get PortalId from claim
-                    var portalIdClaim = JwtIdToken.Claims.FirstOrDefault(x => x.Type == claimName)?.Value;
+                    var portalIdClaim = JwtIdToken2.Claims.FirstOrDefault(x => x.Type == claimName)?.Value;
                     if (string.IsNullOrEmpty(portalIdClaim))
                     {
                         throw new SecurityTokenException("The user has no portalId claim and portalId profile mapping is setup. The AAD user can't login to any portal until the portalId attribute has been setup for the user. Ensure that the PortalId claim has been setup and included on the policy being used.");
@@ -671,7 +676,7 @@ namespace DotNetNuke.Authentication.Azure.Components
             }
 
             var userIdClaim = Utils.GetUserIdClaim(GetCalculatedPortalId());
-            var userClaim = JwtIdToken.Claims.FirstOrDefault(x => x.Type == userIdClaim);
+            var userClaim = JwtIdToken2.Claims.FirstOrDefault(x => x.Type == userIdClaim);
             if (userClaim == null)
             {
                 if (Logger.IsDebugEnabled)
@@ -807,7 +812,7 @@ namespace DotNetNuke.Authentication.Azure.Components
                 }
             }
 
-            SaveTokenCookie(authResult != AuthorisationResult.Authorized);
+            //SaveTokenCookie(authResult != AuthorisationResult.Authorized);
             return authResult;
         }
 
